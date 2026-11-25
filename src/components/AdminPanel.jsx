@@ -2,15 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { isAdminUser, supabase } from "../lib/supabase";
 import AuthSection from "./AuthSection";
 
-const todayInput = () => new Date().toISOString().slice(0, 10);
-
-const formatDate = (iso) =>
-  new Intl.DateTimeFormat("en-US", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  }).format(new Date(iso));
-
 function normalizeHandle(raw, platform) {
   let val = raw.trim();
   if (platform === "x") {
@@ -25,15 +16,7 @@ function normalizeHandle(raw, platform) {
 const isValidXHandle = (handle) => /^@[A-Za-z0-9_]{1,15}$/.test(handle);
 const isValidTikTokHandle = (handle) => /^@[A-Za-z0-9_.]{2,24}$/.test(handle);
 
-async function fetchUserArtworks(userId, isAdmin) {
-  if (!supabase) return [];
-  const { data } = await supabase
-    .from("artworks")
-    .select("*")
-    .order("created_at", { ascending: false });
-  if (!data) return [];
-  return isAdmin ? data : data.filter((row) => row.user_id === userId);
-}
+const todayInput = () => new Date().toISOString().slice(0, 10);
 
 export default function AdminPanel({ session, onChanged, onBack }) {
   const defaultName = session?.user?.user_metadata?.full_name || "";
@@ -46,7 +29,6 @@ export default function AdminPanel({ session, onChanged, onBack }) {
   const [description, setDescription] = useState("");
   const [isFavorite, setIsFavorite] = useState(false);
   const [file, setFile] = useState(null);
-  const [items, setItems] = useState([]);
 
   const previewUrl = useMemo(() => (file ? URL.createObjectURL(file) : ""), [file]);
 
@@ -57,34 +39,10 @@ export default function AdminPanel({ session, onChanged, onBack }) {
   const isAdmin = isAdminUser(session);
 
   useEffect(() => {
-    if (!session || !supabase) return;
-    let active = true;
-
-    fetchUserArtworks(session.user.id, isAdmin).then((rows) => {
-      if (active) setItems(rows);
-    });
-
-    return () => {
-      active = false;
-    };
-  }, [session, isAdmin]);
-
-  useEffect(() => {
     return () => {
       if (previewUrl) URL.revokeObjectURL(previewUrl);
     };
   }, [previewUrl]);
-
-  if (!session) {
-    return (
-      <AuthSection
-        initialMode="signin"
-        subtitle="Sign in or create an account to upload images or videos to the Riroverse archive."
-        onSuccess={onBack}
-        onBack={onBack}
-      />
-    );
-  }
 
   async function handleUpload(e) {
     e.preventDefault();
@@ -157,54 +115,9 @@ export default function AdminPanel({ session, onChanged, onBack }) {
       setFile(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
       setStatus("Published to your Works archive.");
-      setItems(await fetchUserArtworks(session.user.id, isAdmin));
       onChanged?.();
     } catch (err) {
       setStatus("Upload failed: " + err.message);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function toggleFavorite(item) {
-    if (!isAdmin) return;
-    const nextFav = !item.is_favorite;
-    setItems((prev) =>
-      prev.map((row) => (row.id === item.id ? { ...row, is_favorite: nextFav } : row))
-    );
-    const { error } = await supabase
-      .from("artworks")
-      .update({ is_favorite: nextFav })
-      .eq("id", item.id);
-
-    if (error) {
-      setStatus("Could not update favorite: " + error.message);
-      setItems((prev) =>
-        prev.map((row) =>
-          row.id === item.id ? { ...row, is_favorite: !nextFav } : row
-        )
-      );
-      return;
-    }
-    onChanged?.();
-  }
-
-  async function handleDelete(item) {
-    setLoading(true);
-    setStatus("");
-    try {
-      const fileName = item.media_url.split("/artworks-media/")[1];
-      if (fileName) {
-        await supabase.storage
-          .from("artworks-media")
-          .remove([decodeURIComponent(fileName)]);
-      }
-      const { error } = await supabase.from("artworks").delete().eq("id", item.id);
-      if (error) throw error;
-      setItems(await fetchUserArtworks(session.user.id, isAdmin));
-      onChanged?.();
-    } catch (err) {
-      setStatus("Delete failed: " + err.message);
     } finally {
       setLoading(false);
     }
@@ -218,14 +131,13 @@ export default function AdminPanel({ session, onChanged, onBack }) {
       <div className="upload-page-head">
         <div>
           <p className="eyebrow">Studio Desk</p>
-          <h1>Upload Image or Video</h1>
+          <h1>Submit a Request</h1>
           <p className="gallery-subtitle">
-            Publish your work with creator name, X &amp; TikTok handles, and exact release
-            date.
+            Upload your work and we'll review it. You can track the approval status below.
           </p>
         </div>
         <button type="button" className="btn-outline" onClick={onBack}>
-          ← View Works Archive
+          ← Back to Home
         </button>
       </div>
 
@@ -233,8 +145,8 @@ export default function AdminPanel({ session, onChanged, onBack }) {
         <div className="admin-box">
           <div className="admin-top">
             <div>
-              <h3>New Archive Entry</h3>
-              <p className="admin-note">Signed in as {session.user.email}</p>
+              <h3>New Request</h3>
+              <p className="admin-note">{session ? `Signed in as ${session.user.email}` : "Sign in to submit a request"}</p>
             </div>
           </div>
 
@@ -346,12 +258,12 @@ export default function AdminPanel({ session, onChanged, onBack }) {
                     checked={isFavorite}
                     onChange={(e) => setIsFavorite(e.target.checked)}
                   />
-                  <span>Favorite ♥ (Feature in the 5 Home reference slots)</span>
+                  <span>Mark as Approved on submit</span>
                 </label>
               )}
 
               <button type="submit" className="btn-primary" disabled={loading}>
-                {loading ? "Uploading..." : "Publish to Works"}
+                {loading ? "Submitting..." : "Submit Request"}
               </button>
               {status && <p className="admin-status">{status}</p>}
             </form>
@@ -366,78 +278,11 @@ export default function AdminPanel({ session, onChanged, onBack }) {
                     <img src={previewUrl} alt="Selected artwork preview" />
                   )
                 ) : (
-                  <p>Choose an image or video to preview how it frames in Works.</p>
+                  <p>Choose an image or video to preview.</p>
                 )}
               </div>
             </div>
           </div>
-        </div>
-
-        <div className="admin-box">
-          <div className="admin-list-head">
-            <h3>
-              {isAdmin
-                ? `All Studio Uploads (${items.length})`
-                : `Your Published Timeline (${items.length})`}
-            </h3>
-            {isAdmin && <span className="admin-badge">Admin · Full Access</span>}
-          </div>
-          {items.length === 0 ? (
-            <p className="admin-note">No artworks uploaded yet.</p>
-          ) : (
-            <div className="admin-list">
-              {items.map((item) => (
-                <div key={item.id} className="admin-row">
-                  <div className="admin-row-info">
-                    <div className="admin-thumb">
-                      {item.media_type === "video" ? (
-                        <video src={item.media_url} muted playsInline />
-                      ) : (
-                        <img src={item.media_url} alt={item.title} />
-                      )}
-                    </div>
-                    <div>
-                      <strong>{item.title}</strong>
-                      <small>
-                        {formatDate(item.created_at)}
-                        {item.artist_name ? ` · ${item.artist_name}` : ""}
-                        {item.twitter_handle ? ` · X ${item.twitter_handle}` : ""}
-                        {item.tiktok_handle ? ` · TikTok ${item.tiktok_handle}` : ""}
-                        {item.price ? ` · ${item.price}` : ""}
-                      </small>
-                    </div>
-                  </div>
-                  <div className="admin-row-actions">
-                    {isAdmin && (
-                      <button
-                        type="button"
-                        className={`fav-btn-inline ${item.is_favorite ? "is-fav" : ""}`}
-                        onClick={() => toggleFavorite(item)}
-                        aria-label={
-                          item.is_favorite ? "Unfavorite from Home" : "Favorite for Home"
-                        }
-                        title={
-                          item.is_favorite ? "Featured on Home" : "Feature on Home"
-                        }
-                      >
-                        <svg viewBox="0 0 24 24" aria-hidden="true">
-                          <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
-                        </svg>
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      className="btn-danger"
-                      onClick={() => handleDelete(item)}
-                      disabled={loading}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       </div>
     </section>

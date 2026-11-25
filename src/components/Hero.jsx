@@ -5,7 +5,6 @@ export default function Hero() {
     <section id="home" className="hero-section">
       <div className="hero-grid">
         <div className="hero-copy">
-          <p className="eyebrow">Riro Art &amp; Design Studio · Est. 2026</p>
           <h1>
             Visual works rooted in <em>earth, form,</em> and quiet emotion.
           </h1>
@@ -13,21 +12,6 @@ export default function Hero() {
             An international visual studio crafting bespoke digital illustrations, brand
             imagery, and tactile color studies shaped by warm, grounded palettes.
           </p>
-
-          <dl className="hero-specs">
-            <div>
-              <dt>Focus</dt>
-              <dd>Illustration &amp; Visual Direction</dd>
-            </div>
-            <div>
-              <dt>Availability</dt>
-              <dd>Open Worldwide</dd>
-            </div>
-            <div>
-              <dt>Archive</dt>
-              <dd>Chronological Works</dd>
-            </div>
-          </dl>
         </div>
 
         <figure className="hero-exhibition">

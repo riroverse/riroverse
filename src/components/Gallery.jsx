@@ -79,37 +79,91 @@ export default function Gallery({ session, refreshKey, onChanged, onGoUpload, on
 
   const isAdmin = isAdminUser(session);
 
-  // Admin sees all uploads across every user; regular users only see their own uploads
-  useEffect(() => {
-    if (!supabase || !session) return;
-    let active = true;
+  // Admin: fetch all submitted requests for approve/delete panel
+  const [requests, setRequests] = useState([]);
+  const [reqLoading, setReqLoading] = useState(false);
+  const [reqStatus, setReqStatus] = useState("");
+  const [showReqPanel, setShowReqPanel] = useState(false);
 
+  useEffect(() => {
+    if (!isAdmin || !supabase) return;
+    let active = true;
     supabase
       .from("artworks")
       .select("*")
       .order("created_at", { ascending: false })
-      .then(({ data, error }) => {
-        if (!active) return;
-        if (!error && data) {
-          const visibleRows = isAdmin
-            ? data
-            : data.filter((row) => row.user_id === session.user.id);
-          setDbItems(
-            visibleRows.map((row) => ({
-              ...row,
-              src: row.media_url,
-            }))
-          );
-        }
-        setLoaded(true);
+      .then(({ data }) => {
+        if (active && data) setRequests(data);
       });
+    return () => { active = false; };
+  }, [isAdmin, refreshKey]);
+
+  async function toggleApproval(item) {
+    if (!isAdmin || !supabase) return;
+    const nextFav = !item.is_favorite;
+    setRequests((prev) =>
+      prev.map((r) => (r.id === item.id ? { ...r, is_favorite: nextFav } : r))
+    );
+    const { error } = await supabase
+      .from("artworks")
+      .update({ is_favorite: nextFav })
+      .eq("id", item.id);
+    if (error) {
+      setReqStatus("Error: " + error.message);
+      setRequests((prev) =>
+        prev.map((r) => (r.id === item.id ? { ...r, is_favorite: !nextFav } : r))
+      );
+      return;
+    }
+    onChanged?.();
+  }
+
+  async function handleDeleteRequest(item) {
+    if (!isAdmin || !supabase) return;
+    setReqLoading(true);
+    setReqStatus("");
+    try {
+      const fileName = item.media_url?.split("/artworks-media/")[1];
+      if (fileName) {
+        await supabase.storage.from("artworks-media").remove([decodeURIComponent(fileName)]);
+      }
+      const { error } = await supabase.from("artworks").delete().eq("id", item.id);
+      if (error) throw error;
+      setRequests((prev) => prev.filter((r) => r.id !== item.id));
+      onChanged?.();
+    } catch (err) {
+      setReqStatus("Delete failed: " + err.message);
+    } finally {
+      setReqLoading(false);
+    }
+  }
+
+  // Fetch artworks for everyone — admin sees all, non-admin sees approved only
+  useEffect(() => {
+    if (!supabase) return;
+    let active = true;
+
+    const query = isAdmin
+      ? supabase.from("artworks").select("*").order("created_at", { ascending: false })
+      : supabase.from("artworks").select("*").eq("is_favorite", true).order("created_at", { ascending: false });
+
+    query.then(({ data, error }) => {
+      if (!active) return;
+      if (!error && data) {
+        setDbItems(
+          data.map((row) => ({
+            ...row,
+            src: row.media_url,
+          }))
+        );
+      }
+      setLoaded(true);
+    });
 
     return () => {
       active = false;
     };
   }, [refreshKey, session, isAdmin]);
-
-  // Automatically roll over to the new month whenever the calendar month changes
   useEffect(() => {
     function checkMonthRollover() {
       const now = new Date();
@@ -218,17 +272,6 @@ export default function Gallery({ session, refreshKey, onChanged, onGoUpload, on
       (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
     );
   }, [realFilteredItems, exampleMonthItems]);
-
-  if (!session) {
-    return (
-      <AuthSection
-        initialMode="signin"
-        subtitle="Sign in or create an account to open your monthly Works archive."
-        onSuccess={onBackHome}
-        onBack={onBackHome}
-      />
-    );
-  }
 
   async function toggleFavorite(e, item) {
     e.stopPropagation();
@@ -426,6 +469,72 @@ export default function Gallery({ session, refreshKey, onChanged, onGoUpload, on
           </button>
         </div>
       </div>
+
+      {isAdmin && (
+        <div className="admin-requests-panel">
+          <button
+            type="button"
+            className="admin-req-toggle"
+            onClick={() => setShowReqPanel((v) => !v)}
+          >
+            <span>🛡 Manage Requests</span>
+            <span className="admin-req-count">{requests.length} total · {requests.filter(r => !r.is_favorite).length} pending</span>
+            <span className="admin-req-caret">{showReqPanel ? "▲" : "▼"}</span>
+          </button>
+
+          {showReqPanel && (
+            <div className="admin-req-list">
+              {reqStatus && <p className="admin-status">{reqStatus}</p>}
+              {requests.length === 0 ? (
+                <p className="admin-note">No requests submitted yet.</p>
+              ) : (
+                requests.map((item) => (
+                  <div key={item.id} className="admin-row">
+                    <div className="admin-row-info">
+                      <div className="admin-thumb">
+                        {item.media_type === "video" ? (
+                          <video src={item.media_url} muted playsInline />
+                        ) : (
+                          <img src={item.media_url} alt={item.title} />
+                        )}
+                      </div>
+                      <div>
+                        <strong>{item.title}</strong>
+                        <small>
+                          {new Intl.DateTimeFormat("en-US", { day: "numeric", month: "short", year: "numeric" }).format(new Date(item.created_at))}
+                          {item.artist_name ? ` · ${item.artist_name}` : ""}
+                          {item.price ? ` · ${item.price}` : ""}
+                        </small>
+                        <span className={`request-status-badge ${item.is_favorite ? "status-approved" : "status-pending"}`}>
+                          {item.is_favorite ? "✓ Approved" : "⏳ Pending"}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="admin-row-actions">
+                      <button
+                        type="button"
+                        className={`approve-btn ${item.is_favorite ? "is-approved" : ""}`}
+                        onClick={() => toggleApproval(item)}
+                        title={item.is_favorite ? "Revoke approval" : "Approve request"}
+                      >
+                        {item.is_favorite ? "Revoke" : "Approve"}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-danger"
+                        onClick={() => handleDeleteRequest(item)}
+                        disabled={reqLoading}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {isAdmin && showExample && realFilteredItems.length === 0 && (
         <div className="active-filter-bar">

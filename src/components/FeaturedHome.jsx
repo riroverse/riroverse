@@ -82,8 +82,8 @@ export default function FeaturedHome({ session, refreshKey, onOpenWorks, onOpenA
             View Full Works →
           </button>
         ) : (
-          <button type="button" className="btn-outline" onClick={onOpenAuth}>
-            Sign In for Full Works →
+          <button type="button" className="btn-outline" onClick={onOpenWorks}>
+            View Full Works →
           </button>
         )}
       </div>
