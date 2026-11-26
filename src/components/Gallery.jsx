@@ -1,40 +1,118 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { artworks as fallbackArtworks } from "../data/artworks";
-import { createArtDataUrl } from "../utils/artPlaceholder";
+import { useEffect, useMemo, useState } from "react";
 import { isAdminUser, isSupabaseConfigured, supabase } from "../lib/supabase";
-import AuthSection from "./AuthSection";
 
-const START_YEAR = 2026;
-
-const MONTHS_SHORT = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
+const DEMO_REQUESTS = [
+  {
+    title: "Dusk in the Studio",
+    desc: "Warm terracotta illustration inspired by late afternoon sunlight across a minimalist desk.",
+  },
+  {
+    title: "Terracotta Stillness",
+    desc: "Editorial character portrait with muted clay palette, soft grain texture, and calm expression.",
+  },
+  {
+    title: "Morning Espresso",
+    desc: "Cozy coffee corner scene in earthy brown and cream tones for a brand header visual.",
+  },
+  {
+    title: "Warm Brushstrokes",
+    desc: "Abstract painterly landscape blending ochre, raw umber, and linen white for print series.",
+  },
+  {
+    title: "Clay & Shadow",
+    desc: "Minimal architectural study focusing on geometric arches and long afternoon shadows.",
+  },
+  {
+    title: "Autumn Horizon",
+    desc: "Atmospheric landscape artwork with burnt sienna hills and quiet misty sky.",
+  },
+  {
+    title: "Ochre Courtyard",
+    desc: "Sun-washed Mediterranean courtyard concept art with ceramic pots and warm plaster walls.",
+  },
+  {
+    title: "Quiet Monolith",
+    desc: "Sculptural editorial cover concept using deep espresso silhouette against warm sand backdrop.",
+  },
+  {
+    title: "Sienna Study IV",
+    desc: "Botanical line work paired with soft watercolor wash in earth tones for stationery set.",
+  },
+  {
+    title: "Timber & Light",
+    desc: "Interior study of cedar beams and morning window light, calm and grounded composition.",
+  },
+  {
+    title: "Sandstone Veil",
+    desc: "Portrait illustration with flowing linen fabric and subtle sunlit rim lighting.",
+  },
+  {
+    title: "Amber Solitude",
+    desc: "Single figure overlooking a golden dusk valley, painted with tactile dry-brush texture.",
+  },
+  {
+    title: "Raw Umber Form",
+    desc: "Modernist color-block composition suitable for album cover and social campaign.",
+  },
+  {
+    title: "Evening Linen",
+    desc: "Still life of handmade ceramics, dried branches, and warm candlelight on linen table.",
+  },
+  {
+    title: "Desert Archway",
+    desc: "Minimalist poster illustration featuring terracotta doorway opening to twilight sky.",
+  },
+  {
+    title: "Soft Kiln Glow",
+    desc: "Artisan studio moment capturing freshly glazed pottery in warm ambient light.",
+  },
+  {
+    title: "Cedar & Silence",
+    desc: "Quiet forest clearing rendered in muted olive, bark brown, and soft parchment highlights.",
+  },
+  {
+    title: "Burnt Earth No. 9",
+    desc: "Textured abstract canvas piece exploring balance between organic shapes and negative space.",
+  },
+  {
+    title: "Late Sun Frame",
+    desc: "Window-framed cityscape at golden hour with soft nostalgic earth-tone grading.",
+  },
+  {
+    title: "Earthen Echo",
+    desc: "Editorial spot illustration series combining organic stones, hands, and warm typography.",
+  },
 ];
 
-const MONTHS_FULL = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
+const DEMO_ARTISTS = [
+  { name: "Riro", x: "@riroartdsg", tiktok: "@riroartdsg" },
+  { name: "Nadia K.", x: "@nadiastudio", tiktok: "@nadia.draws" },
+  { name: "Sora Tanaka", x: "@sora_visual", tiktok: "@soratanaka" },
+  { name: "Alya Putri", x: "@alyaputriart", tiktok: "@alya.sketch" },
+  { name: "Kael M.", x: "@kaelforms", tiktok: "@kael.studio" },
 ];
+
+function buildDemoTextRequests() {
+  return DEMO_REQUESTS.map((entry, i) => {
+    const artist = DEMO_ARTISTS[i % DEMO_ARTISTS.length];
+    const day = String(Math.max(1, 26 - i)).padStart(2, "0");
+    return {
+      id: `demo-text-${i + 1}`,
+      title: entry.title,
+      artist_name: artist.name,
+      twitter_handle: artist.x,
+      tiktok_handle: artist.tiktok,
+      price: null,
+      description: entry.desc,
+      media_type: "image",
+      media_url: "",
+      src: "",
+      created_at: `2026-11-${day}T12:00:00.000Z`,
+      is_favorite: i >= 14,
+      isDemo: true,
+    };
+  });
+}
 
 const formatFullDate = (iso) =>
   new Intl.DateTimeFormat("en-US", {
@@ -57,95 +135,34 @@ const toSocialUrl = (handle, platform) => {
     : `https://www.tiktok.com/@${clean}`;
 };
 
-export default function Gallery({ session, refreshKey, onChanged, onGoUpload, onBackHome }) {
+export default function Gallery({ session, refreshKey, onChanged }) {
   const [selected, setSelected] = useState(null);
-  const [selectedYear, setSelectedYear] = useState(() =>
-    Math.max(START_YEAR, new Date().getFullYear())
-  );
-  const [selectedMonth, setSelectedMonth] = useState(() => new Date().getMonth());
-  const [adminShowAll, setAdminShowAll] = useState(false);
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [pickerYear, setPickerYear] = useState(() =>
-    Math.max(START_YEAR, new Date().getFullYear())
-  );
-  const [showExample, setShowExample] = useState(false);
-
   const [dbItems, setDbItems] = useState([]);
   const [loaded, setLoaded] = useState(!isSupabaseConfigured);
-  const pickerRef = useRef(null);
-  const lastRealMonthRef = useRef(
-    `${new Date().getFullYear()}-${new Date().getMonth()}`
-  );
+  const [adminFilter, setAdminFilter] = useState("all"); // "all" | "pending" | "approved"
+  const [showDemoPreview, setShowDemoPreview] = useState(true);
+  const [demoItems, setDemoItems] = useState(() => buildDemoTextRequests());
+  const [busyId, setBusyId] = useState(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [actionError, setActionError] = useState("");
 
   const isAdmin = isAdminUser(session);
 
-  // Admin: fetch all submitted requests for approve/delete panel
-  const [requests, setRequests] = useState([]);
-  const [reqLoading, setReqLoading] = useState(false);
-  const [reqStatus, setReqStatus] = useState("");
-  const [showReqPanel, setShowReqPanel] = useState(false);
-
-  useEffect(() => {
-    if (!isAdmin || !supabase) return;
-    let active = true;
-    supabase
-      .from("artworks")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .then(({ data }) => {
-        if (active && data) setRequests(data);
-      });
-    return () => { active = false; };
-  }, [isAdmin, refreshKey]);
-
-  async function toggleApproval(item) {
-    if (!isAdmin || !supabase) return;
-    const nextFav = !item.is_favorite;
-    setRequests((prev) =>
-      prev.map((r) => (r.id === item.id ? { ...r, is_favorite: nextFav } : r))
-    );
-    const { error } = await supabase
-      .from("artworks")
-      .update({ is_favorite: nextFav })
-      .eq("id", item.id);
-    if (error) {
-      setReqStatus("Error: " + error.message);
-      setRequests((prev) =>
-        prev.map((r) => (r.id === item.id ? { ...r, is_favorite: !nextFav } : r))
-      );
-      return;
-    }
-    onChanged?.();
-  }
-
-  async function handleDeleteRequest(item) {
-    if (!isAdmin || !supabase) return;
-    setReqLoading(true);
-    setReqStatus("");
-    try {
-      const fileName = item.media_url?.split("/artworks-media/")[1];
-      if (fileName) {
-        await supabase.storage.from("artworks-media").remove([decodeURIComponent(fileName)]);
-      }
-      const { error } = await supabase.from("artworks").delete().eq("id", item.id);
-      if (error) throw error;
-      setRequests((prev) => prev.filter((r) => r.id !== item.id));
-      onChanged?.();
-    } catch (err) {
-      setReqStatus("Delete failed: " + err.message);
-    } finally {
-      setReqLoading(false);
-    }
-  }
-
-  // Fetch artworks for everyone — admin sees all, non-admin sees approved only
+  // Fetch artworks: admin sees all submissions, visitors/non-admin see approved only
   useEffect(() => {
     if (!supabase) return;
     let active = true;
 
     const query = isAdmin
-      ? supabase.from("artworks").select("*").order("created_at", { ascending: false })
-      : supabase.from("artworks").select("*").eq("is_favorite", true).order("created_at", { ascending: false });
+      ? supabase
+          .from("artworks")
+          .select("*")
+          .order("created_at", { ascending: false })
+      : supabase
+          .from("artworks")
+          .select("*")
+          .eq("is_favorite", true)
+          .order("created_at", { ascending: false });
 
     query.then(({ data, error }) => {
       if (!active) return;
@@ -164,134 +181,100 @@ export default function Gallery({ session, refreshKey, onChanged, onGoUpload, on
       active = false;
     };
   }, [refreshKey, session, isAdmin]);
-  useEffect(() => {
-    function checkMonthRollover() {
-      const now = new Date();
-      const key = `${now.getFullYear()}-${now.getMonth()}`;
-      if (key !== lastRealMonthRef.current) {
-        lastRealMonthRef.current = key;
-        const safeYear = Math.max(START_YEAR, now.getFullYear());
-        setSelectedYear(safeYear);
-        setSelectedMonth(now.getMonth());
-        setPickerYear(safeYear);
-      }
-    }
 
-    const timer = setInterval(checkMonthRollover, 60000);
-    window.addEventListener("focus", checkMonthRollover);
-    return () => {
-      clearInterval(timer);
-      window.removeEventListener("focus", checkMonthRollover);
-    };
-  }, []);
-
+  // Close lightbox on Escape
   useEffect(() => {
     if (!selected) return;
     const handleKey = (e) => {
-      if (e.key === "Escape") setSelected(null);
+      if (e.key === "Escape") {
+        setSelected(null);
+        setConfirmDeleteId(null);
+      }
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
   }, [selected]);
 
-  useEffect(() => {
-    if (!pickerOpen) return;
-    const handleOutside = (e) => {
-      if (pickerRef.current && !pickerRef.current.contains(e.target)) {
-        setPickerOpen(false);
-      }
-    };
-    const handleEsc = (e) => {
-      if (e.key === "Escape") setPickerOpen(false);
-    };
-    document.addEventListener("mousedown", handleOutside);
-    window.addEventListener("keydown", handleEsc);
-    return () => {
-      document.removeEventListener("mousedown", handleOutside);
-      window.removeEventListener("keydown", handleEsc);
-    };
-  }, [pickerOpen]);
+  const allItems = useMemo(() => {
+    if (!showDemoPreview) return dbItems;
+    if (isAdmin) return [...demoItems, ...dbItems];
+    return [...demoItems.filter((item) => item.is_favorite), ...dbItems];
+  }, [isAdmin, showDemoPreview, demoItems, dbItems]);
 
-  const { years, yearMonthCounts, yearTotals } = useMemo(() => {
-    const endYear = Math.max(new Date().getFullYear() + 4, START_YEAR + 4);
-    const yearSet = new Set();
-    for (let y = START_YEAR; y <= endYear; y++) {
-      yearSet.add(y);
+  const counts = useMemo(() => {
+    let pending = 0;
+    let approved = 0;
+    for (const item of allItems) {
+      if (item.is_favorite) approved += 1;
+      else pending += 1;
+    }
+    return { all: allItems.length, pending, approved };
+  }, [allItems]);
+
+  const visibleItems = useMemo(() => {
+    if (!isAdmin) return allItems;
+    if (adminFilter === "pending") {
+      return allItems.filter((item) => !item.is_favorite);
+    }
+    if (adminFilter === "approved") {
+      return allItems.filter((item) => Boolean(item.is_favorite));
+    }
+    return allItems;
+  }, [allItems, isAdmin, adminFilter]);
+
+  async function handleToggleApproval(e, item) {
+    e?.stopPropagation();
+    if (!isAdmin || busyId === item.id) return;
+
+    const nextApproved = !item.is_favorite;
+    setConfirmDeleteId(null);
+
+    if (item.isDemo) {
+      setDemoItems((prev) =>
+        prev.map((row) =>
+          row.id === item.id ? { ...row, is_favorite: nextApproved } : row
+        )
+      );
+      setSelected((prev) =>
+        prev && prev.id === item.id
+          ? { ...prev, is_favorite: nextApproved }
+          : prev
+      );
+      return;
     }
 
-    const ymMap = new Map();
-    const yTotals = new Map();
+    if (!supabase) return;
+    setBusyId(item.id);
+    setActionError("");
 
-    for (const item of dbItems) {
-      const d = new Date(item.created_at);
-      const y = d.getFullYear();
-      const m = d.getMonth();
-      if (y < START_YEAR) continue;
-      yearSet.add(y);
-      if (!ymMap.has(y)) ymMap.set(y, Array(12).fill(0));
-      ymMap.get(y)[m] += 1;
-      yTotals.set(y, (yTotals.get(y) || 0) + 1);
-    }
-
-    const sortedYears = Array.from(yearSet).sort((a, b) => a - b);
-    return { years: sortedYears, yearMonthCounts: ymMap, yearTotals: yTotals };
-  }, [dbItems]);
-
-  // Sample items only available for Admin preview
-  const exampleMonthItems = useMemo(() => {
-    if (!isAdmin || !showExample) return [];
-    const sampleDays = [20, 14, 8, 2];
-    const mm = String(selectedMonth + 1).padStart(2, "0");
-
-    return sampleDays.map((day, idx) => {
-      const base = fallbackArtworks[idx % fallbackArtworks.length];
-      const dd = String(day).padStart(2, "0");
-      return {
-        ...base,
-        id: `example-${selectedYear}-${mm}-${dd}`,
-        created_at: `${selectedYear}-${mm}-${dd}T12:00:00Z`,
-        src: base.image || createArtDataUrl(idx + 1, base.palette),
-        media_type: "image",
-        isExample: true,
-      };
-    });
-  }, [isAdmin, showExample, selectedYear, selectedMonth]);
-
-  const realFilteredItems = useMemo(() => {
-    if (isAdmin && adminShowAll) return dbItems;
-    return dbItems.filter((item) => {
-      const d = new Date(item.created_at);
-      return d.getFullYear() === selectedYear && d.getMonth() === selectedMonth;
-    });
-  }, [dbItems, isAdmin, adminShowAll, selectedYear, selectedMonth]);
-
-  const monthlyItems = useMemo(() => {
-    const source =
-      realFilteredItems.length > 0 ? realFilteredItems : exampleMonthItems;
-    return [...source].sort(
-      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-    );
-  }, [realFilteredItems, exampleMonthItems]);
-
-  async function toggleFavorite(e, item) {
-    e.stopPropagation();
-    if (!isAdmin || !supabase || item.isExample) return;
-
-    const nextFav = !item.is_favorite;
+    // Optimistic update
     setDbItems((prev) =>
-      prev.map((row) => (row.id === item.id ? { ...row, is_favorite: nextFav } : row))
+      prev.map((row) =>
+        row.id === item.id ? { ...row, is_favorite: nextApproved } : row
+      )
+    );
+    setSelected((prev) =>
+      prev && prev.id === item.id ? { ...prev, is_favorite: nextApproved } : prev
     );
 
     const { error } = await supabase
       .from("artworks")
-      .update({ is_favorite: nextFav })
+      .update({ is_favorite: nextApproved })
       .eq("id", item.id);
 
+    setBusyId(null);
+
     if (error) {
+      setActionError("Failed to update status: " + error.message);
       setDbItems((prev) =>
         prev.map((row) =>
-          row.id === item.id ? { ...row, is_favorite: !nextFav } : row
+          row.id === item.id ? { ...row, is_favorite: !nextApproved } : row
         )
+      );
+      setSelected((prev) =>
+        prev && prev.id === item.id
+          ? { ...prev, is_favorite: !nextApproved }
+          : prev
       );
       return;
     }
@@ -299,375 +282,344 @@ export default function Gallery({ session, refreshKey, onChanged, onGoUpload, on
     onChanged?.();
   }
 
-  function stepMonth(delta) {
-    const next = new Date(selectedYear, selectedMonth + delta, 1);
-    if (next.getFullYear() < START_YEAR) return;
-    setAdminShowAll(false);
-    setSelectedYear(next.getFullYear());
-    setSelectedMonth(next.getMonth());
-    setPickerYear(next.getFullYear());
-  }
+  async function handleDeleteItem(e, item) {
+    e?.stopPropagation();
+    if (!isAdmin || busyId === item.id) return;
 
-  function jumpToTodayMonth() {
-    const now = new Date();
-    const safeYear = Math.max(START_YEAR, now.getFullYear());
-    setAdminShowAll(false);
-    setSelectedYear(safeYear);
-    setSelectedMonth(now.getMonth());
-    setPickerYear(safeYear);
-    setPickerOpen(false);
-  }
+    if (item.isDemo) {
+      setDemoItems((prev) => prev.filter((row) => row.id !== item.id));
+      setSelected((prev) => (prev && prev.id === item.id ? null : prev));
+      setConfirmDeleteId(null);
+      return;
+    }
 
-  function selectYearMonth(year, monthIndex) {
-    setAdminShowAll(false);
-    setSelectedYear(year);
-    setSelectedMonth(monthIndex);
-    setPickerOpen(false);
-  }
+    if (!supabase) return;
+    setBusyId(item.id);
+    setActionError("");
 
-  const isAtEarliestMonth = selectedYear === START_YEAR && selectedMonth === 0;
-  const activeMonthLabel = `${MONTHS_FULL[selectedMonth]} ${selectedYear}`;
-  const monthCountsForPickerYear =
-    yearMonthCounts.get(pickerYear) || Array(12).fill(0);
+    try {
+      const fileName = item.media_url?.split("/artworks-media/")[1];
+      if (fileName) {
+        await supabase.storage
+          .from("artworks-media")
+          .remove([decodeURIComponent(fileName)]);
+      }
+      const { error } = await supabase
+        .from("artworks")
+        .delete()
+        .eq("id", item.id);
+      if (error) throw error;
+
+      setDbItems((prev) => prev.filter((row) => row.id !== item.id));
+      setSelected((prev) => (prev && prev.id === item.id ? null : prev));
+      setConfirmDeleteId(null);
+      onChanged?.();
+    } catch (err) {
+      setActionError("Delete failed: " + err.message);
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   return (
-    <section id="works" className="works-page">
-      <div className="gallery-topbar">
-        <div>
-          <p className="eyebrow">
-            {isAdmin ? "Admin Overview · All Accounts" : "Monthly Archive"}
-          </p>
-          <h1>{isAdmin && adminShowAll ? "All Studio Uploads" : activeMonthLabel}</h1>
-          <p className="gallery-subtitle">
-            {!loaded
-              ? "Loading archive..."
-              : isAdmin && adminShowAll
-              ? `Showing all ${realFilteredItems.length} uploads across every month and user.`
-              : realFilteredItems.length > 0
-              ? isAdmin
-                ? `${realFilteredItems.length} ${
-                    realFilteredItems.length === 1 ? "piece" : "pieces"
-                  } from all users in ${activeMonthLabel}.`
-                : `${realFilteredItems.length} ${
-                    realFilteredItems.length === 1 ? "piece" : "pieces"
-                  } uploaded in ${activeMonthLabel}, sorted by day.`
-              : isAdmin && showExample
-              ? `Previewing example uploads across different days in ${activeMonthLabel}.`
-              : `0 pieces uploaded for ${activeMonthLabel}.`}
-          </p>
-        </div>
-
-        <div className="works-controls">
-          {isAdmin && (
-            <button
-              type="button"
-              className={`filter-tab admin-all-btn ${adminShowAll ? "active" : ""}`}
-              onClick={() => setAdminShowAll((v) => !v)}
-            >
-              {adminShowAll ? "By Month" : `All Uploads (${dbItems.length})`}
-            </button>
-          )}
-
-          <div className="month-stepper" role="group" aria-label="Switch month">
-            <button
-              type="button"
-              className="stepper-btn"
-              onClick={() => stepMonth(-1)}
-              disabled={isAtEarliestMonth}
-              aria-label="Previous month"
-              title="Previous month"
-            >
-              ‹
-            </button>
-
-            <div className="date-picker-wrap" ref={pickerRef}>
-              <button
-                type="button"
-                className="date-picker-trigger"
-                onClick={() => {
-                  setPickerYear(selectedYear);
-                  setPickerOpen((v) => !v);
-                }}
-                aria-expanded={pickerOpen}
-              >
-                <span>
-                  {MONTHS_SHORT[selectedMonth]} {selectedYear}
-                </span>
-                <span className="caret" aria-hidden="true">▾</span>
-              </button>
-
-              {pickerOpen && (
-                <div
-                  className="date-picker-popover"
-                  role="dialog"
-                  aria-label="Choose Month and Year"
-                >
-                  <div className="date-picker-head">
-                    <strong>Select Month</strong>
-                    <button
-                      type="button"
-                      className="date-reset-btn"
-                      onClick={jumpToTodayMonth}
-                    >
-                      This Month
-                    </button>
-                  </div>
-
-                  <div className="date-years-row">
-                    {years.map((y) => (
-                      <button
-                        key={y}
-                        type="button"
-                        className={`year-pill ${pickerYear === y ? "active" : ""}`}
-                        onClick={() => setPickerYear(y)}
-                      >
-                        <span>{y}</span>
-                        {(yearTotals.get(y) || 0) > 0 && (
-                          <small>{yearTotals.get(y)}</small>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="date-months-grid">
-                    {MONTHS_SHORT.map((label, mIdx) => {
-                      const count = monthCountsForPickerYear[mIdx];
-                      const isSelected =
-                        !adminShowAll &&
-                        selectedYear === pickerYear &&
-                        selectedMonth === mIdx;
-                      return (
-                        <button
-                          key={label}
-                          type="button"
-                          className={`month-cell ${isSelected ? "active" : ""}`}
-                          onClick={() => selectYearMonth(pickerYear, mIdx)}
-                        >
-                          <span>{label}</span>
-                          <small>{count > 0 ? count : "0"}</small>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <button
-              type="button"
-              className="stepper-btn"
-              onClick={() => stepMonth(1)}
-              aria-label="Next month"
-              title="Next month"
-            >
-              ›
-            </button>
-          </div>
-
-          <button type="button" className="btn-primary" onClick={onGoUpload}>
-            + Upload Work
-          </button>
-        </div>
-      </div>
-
+    <section id="works" className="works-page works-page-clean">
+      {/* Subtle filter bar — visible to Admin only */}
       {isAdmin && (
-        <div className="admin-requests-panel">
+        <div className="admin-filter-strip" role="tablist" aria-label="Filter submissions">
           <button
             type="button"
-            className="admin-req-toggle"
-            onClick={() => setShowReqPanel((v) => !v)}
+            role="tab"
+            aria-selected={adminFilter === "all"}
+            className={`admin-filter-pill ${adminFilter === "all" ? "active" : ""}`}
+            onClick={() => setAdminFilter("all")}
           >
-            <span>🛡 Manage Requests</span>
-            <span className="admin-req-count">{requests.length} total · {requests.filter(r => !r.is_favorite).length} pending</span>
-            <span className="admin-req-caret">{showReqPanel ? "▲" : "▼"}</span>
+            All <span className="pill-count">{counts.all}</span>
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={adminFilter === "pending"}
+            className={`admin-filter-pill ${adminFilter === "pending" ? "active" : ""}`}
+            onClick={() => setAdminFilter("pending")}
+          >
+            Pending{" "}
+            <span className={`pill-count ${counts.pending > 0 ? "has-pending" : ""}`}>
+              {counts.pending}
+            </span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={adminFilter === "approved"}
+            className={`admin-filter-pill ${adminFilter === "approved" ? "active" : ""}`}
+            onClick={() => setAdminFilter("approved")}
+          >
+            Approved <span className="pill-count">{counts.approved}</span>
+          </button>
+          <button
+            type="button"
+            className={`admin-filter-pill admin-demo-pill ${showDemoPreview ? "is-on" : ""}`}
+            onClick={() => {
+              if (!showDemoPreview && demoItems.length === 0) {
+                setDemoItems(buildDemoTextRequests());
+              }
+              setShowDemoPreview((v) => !v);
+            }}
+            title="Toggle local 20-item text preview (not saved to database)"
+          >
+            {showDemoPreview ? "Hide 20 Preview" : "Preview 20"}
+          </button>
+        </div>
+      )}
 
-          {showReqPanel && (
-            <div className="admin-req-list">
-              {reqStatus && <p className="admin-status">{reqStatus}</p>}
-              {requests.length === 0 ? (
-                <p className="admin-note">No requests submitted yet.</p>
-              ) : (
-                requests.map((item) => (
-                  <div key={item.id} className="admin-row">
-                    <div className="admin-row-info">
-                      <div className="admin-thumb">
-                        {item.media_type === "video" ? (
-                          <video src={item.media_url} muted playsInline />
-                        ) : (
-                          <img src={item.media_url} alt={item.title} />
+      {isAdmin && actionError && (
+        <div className="admin-toast" role="alert">
+          <span>{actionError}</span>
+          <button
+            type="button"
+            onClick={() => setActionError("")}
+            aria-label="Dismiss error"
+          >
+            &times;
+          </button>
+        </div>
+      )}
+
+      <div className="about-gallery-scroll">
+        {!loaded ? (
+          <div className="empty-gallery-minimal">
+            <p>Loading...</p>
+          </div>
+        ) : visibleItems.length === 0 ? (
+          <div className="empty-gallery-minimal">
+            <p>
+              {isAdmin && adminFilter === "pending"
+                ? "No pending requests."
+                : isAdmin && adminFilter === "approved"
+                ? "No approved pieces yet."
+                : "No artworks available yet."}
+            </p>
+          </div>
+        ) : (
+          <div className="gallery-grid">
+            {visibleItems.map((item) => {
+              const isBusy = busyId === item.id;
+              const isConfirmingDelete = confirmDeleteId === item.id;
+
+              return (
+                <article
+                  key={item.id}
+                  className={`art-card ${isAdmin && !item.is_favorite ? "art-card-pending" : ""}`}
+                  onClick={() => setSelected(item)}
+                >
+                  <div className="art-thumb">
+                    {item.src ? (
+                      item.media_type === "video" ? (
+                        <video src={item.src} muted loop autoPlay playsInline />
+                      ) : (
+                        <img src={item.src} alt={item.title} loading="lazy" />
+                      )
+                    ) : (
+                      <div className="art-text-plaque">
+                        <span className="art-plaque-tag">Request</span>
+                        <h5>{item.title}</h5>
+                        {item.description && (
+                          <p className="art-plaque-desc">{item.description}</p>
                         )}
                       </div>
-                      <div>
-                        <strong>{item.title}</strong>
-                        <small>
-                          {new Intl.DateTimeFormat("en-US", { day: "numeric", month: "short", year: "numeric" }).format(new Date(item.created_at))}
-                          {item.artist_name ? ` · ${item.artist_name}` : ""}
-                          {item.price ? ` · ${item.price}` : ""}
-                        </small>
-                        <span className={`request-status-badge ${item.is_favorite ? "status-approved" : "status-pending"}`}>
-                          {item.is_favorite ? "✓ Approved" : "⏳ Pending"}
-                        </span>
+                    )}
+                    <span className="day-chip">{formatDayChip(item.created_at)}</span>
+                    {item.src && item.media_type === "video" && (
+                      <span className="media-badge">VIDEO</span>
+                    )}
+
+                    {/* Admin-only status indicator on each photo */}
+                    {isAdmin && (
+                      <span
+                        className={`card-status-pill ${
+                          item.is_favorite ? "is-approved" : "is-pending"
+                        }`}
+                      >
+                        <span className="status-dot" aria-hidden="true" />
+                        {item.is_favorite ? "Approved" : "Pending"}
+                      </span>
+                    )}
+
+                    <span className="art-hover-label">View Piece</span>
+                  </div>
+
+                  <div className="art-meta">
+                    <div className="art-meta-top">
+                      <h4>{item.title}</h4>
+                      {item.price && <span className="art-price">{item.price}</span>}
+                    </div>
+                    <div className="art-meta-sub">
+                      <time dateTime={item.created_at}>
+                        {formatFullDate(item.created_at)}
+                      </time>
+                      {item.artist_name && <span>by {item.artist_name}</span>}
+                    </div>
+                    {(item.twitter_handle || item.tiktok_handle) && (
+                      <div
+                        className="art-socials"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {item.twitter_handle && (
+                          <a
+                            href={toSocialUrl(item.twitter_handle, "x")}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            X {item.twitter_handle}
+                          </a>
+                        )}
+                        {item.tiktok_handle && (
+                          <a
+                            href={toSocialUrl(item.tiktok_handle, "tiktok")}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            TikTok {item.tiktok_handle}
+                          </a>
+                        )}
                       </div>
-                    </div>
-                    <div className="admin-row-actions">
-                      <button
-                        type="button"
-                        className={`approve-btn ${item.is_favorite ? "is-approved" : ""}`}
-                        onClick={() => toggleApproval(item)}
-                        title={item.is_favorite ? "Revoke approval" : "Approve request"}
-                      >
-                        {item.is_favorite ? "Revoke" : "Approve"}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn-danger"
-                        onClick={() => handleDeleteRequest(item)}
-                        disabled={reqLoading}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {isAdmin && showExample && realFilteredItems.length === 0 && (
-        <div className="active-filter-bar">
-          <span>
-            <strong>Example Preview</strong> — showing how uploads from different days
-            (2, 8, 14, 20) appear in <strong>{activeMonthLabel}</strong>.
-          </span>
-          <button type="button" onClick={() => setShowExample(false)}>
-            Close example ×
-          </button>
-        </div>
-      )}
-
-      {!loaded ? (
-        <div className="empty-month-card">
-          <p>Loading artworks for {activeMonthLabel}...</p>
-        </div>
-      ) : monthlyItems.length === 0 ? (
-        <div className="empty-month-card">
-          <span className="eyebrow">{activeMonthLabel} · 0 Works</span>
-          <h2>No artworks uploaded for {activeMonthLabel} yet</h2>
-          <p>
-            Each month starts fresh. Upload your images or videos with a date in{" "}
-            {activeMonthLabel} to see them appear here.
-          </p>
-          {isAdmin && (
-            <button
-              type="button"
-              className="example-link"
-              onClick={() => setShowExample(true)}
-            >
-              Preview example with different days
-            </button>
-          )}
-        </div>
-      ) : (
-        <div className="gallery-grid">
-          {monthlyItems.map((item) => (
-            <article
-              key={item.id}
-              className="art-card"
-              onClick={() => setSelected(item)}
-            >
-              <div className="art-thumb">
-                {item.media_type === "video" ? (
-                  <video src={item.src} muted loop autoPlay playsInline />
-                ) : (
-                  <img src={item.src} alt={item.title} loading="lazy" />
-                )}
-                <span className="day-chip">{formatDayChip(item.created_at)}</span>
-                {item.media_type === "video" && (
-                  <span className="media-badge">VIDEO</span>
-                )}
-
-                {isAdmin && !item.isExample && (
-                  <button
-                    type="button"
-                    className={`fav-btn ${item.is_favorite ? "is-fav" : ""}`}
-                    onClick={(e) => toggleFavorite(e, item)}
-                    aria-label={
-                      item.is_favorite ? "Remove from Home favorites" : "Feature on Home"
-                    }
-                    title={item.is_favorite ? "Featured on Home" : "Favorite for Home"}
-                  >
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                      <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
-                    </svg>
-                  </button>
-                )}
-
-                <span className="art-hover-label">View Piece</span>
-              </div>
-
-              <div className="art-meta">
-                <div className="art-meta-top">
-                  <h4>{item.title}</h4>
-                  {item.price && <span className="art-price">{item.price}</span>}
-                </div>
-                <div className="art-meta-sub">
-                  <time dateTime={item.created_at}>
-                    {formatFullDate(item.created_at)}
-                  </time>
-                  {item.artist_name && <span>by {item.artist_name}</span>}
-                </div>
-                {(item.twitter_handle || item.tiktok_handle) && (
-                  <div className="art-socials" onClick={(e) => e.stopPropagation()}>
-                    {item.twitter_handle && (
-                      <a
-                        href={toSocialUrl(item.twitter_handle, "x")}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        X {item.twitter_handle}
-                      </a>
                     )}
-                    {item.tiktok_handle && (
-                      <a
-                        href={toSocialUrl(item.tiktok_handle, "tiktok")}
-                        target="_blank"
-                        rel="noopener noreferrer"
+
+                    {/* Admin-only per-photo manage request bar */}
+                    {isAdmin && (
+                      <div
+                        className="card-admin-actions"
+                        onClick={(e) => e.stopPropagation()}
                       >
-                        TikTok {item.tiktok_handle}
-                      </a>
+                        {isConfirmingDelete ? (
+                          <>
+                            <span className="card-delete-prompt">Delete piece?</span>
+                            <div className="card-admin-btn-group">
+                              <button
+                                type="button"
+                                className="card-action-btn card-action-cancel"
+                                disabled={isBusy}
+                                onClick={() => setConfirmDeleteId(null)}
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="button"
+                                className="card-action-btn card-action-confirm-delete"
+                                disabled={isBusy}
+                                onClick={(e) => handleDeleteItem(e, item)}
+                              >
+                                {isBusy ? "Deleting..." : "Confirm"}
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              className={`card-action-btn ${
+                                item.is_favorite
+                                  ? "card-action-revoke"
+                                  : "card-action-approve"
+                              }`}
+                              disabled={isBusy}
+                              onClick={(e) => handleToggleApproval(e, item)}
+                            >
+                              {item.is_favorite ? (
+                                <>
+                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                    <line x1="18" y1="6" x2="6" y2="18" />
+                                    <line x1="6" y1="6" x2="18" y2="18" />
+                                  </svg>
+                                  Revoke
+                                </>
+                              ) : (
+                                <>
+                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                    <polyline points="20 6 9 17 4 12" />
+                                  </svg>
+                                  Approve
+                                </>
+                              )}
+                            </button>
+
+                            <button
+                              type="button"
+                              className="card-action-btn card-action-delete"
+                              disabled={isBusy}
+                              onClick={() => setConfirmDeleteId(item.id)}
+                              aria-label={`Delete ${item.title}`}
+                              title="Delete submission"
+                            >
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                <polyline points="3 6 5 6 21 6" />
+                                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                                <path d="M10 11v6" />
+                                <path d="M14 11v6" />
+                                <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                              </svg>
+                              Delete
+                            </button>
+                          </>
+                        )}
+                      </div>
                     )}
                   </div>
-                )}
-              </div>
-            </article>
-          ))}
-        </div>
-      )}
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       {selected && (
-        <div className="lightbox" onClick={() => setSelected(null)}>
-          <div className="lightbox-panel" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="lightbox"
+          onClick={() => {
+            setSelected(null);
+            setConfirmDeleteId(null);
+          }}
+        >
+          <div
+            className={`lightbox-panel ${!selected.src ? "lightbox-panel-text-only" : ""}`}
+            onClick={(e) => e.stopPropagation()}
+          >
             <button
               className="lightbox-close"
-              onClick={() => setSelected(null)}
+              onClick={() => {
+                setSelected(null);
+                setConfirmDeleteId(null);
+              }}
               aria-label="Close preview"
             >
               &times;
             </button>
 
-            <div className="lightbox-media">
-              {selected.media_type === "video" ? (
-                <video src={selected.src} controls autoPlay playsInline />
-              ) : (
-                <img src={selected.src} alt={selected.title} />
-              )}
-            </div>
+            {selected.src && (
+              <div className="lightbox-media">
+                {selected.media_type === "video" ? (
+                  <video src={selected.src} controls autoPlay playsInline />
+                ) : (
+                  <img src={selected.src} alt={selected.title} />
+                )}
+              </div>
+            )}
 
             <div className="lightbox-details">
-              <span className="eyebrow">{formatFullDate(selected.created_at)}</span>
+              <div className="lightbox-meta-row">
+                <span className="eyebrow">{formatFullDate(selected.created_at)}</span>
+                {isAdmin && (
+                  <span
+                    className={`card-status-pill card-status-inline ${
+                      selected.is_favorite ? "is-approved" : "is-pending"
+                    }`}
+                  >
+                    <span className="status-dot" aria-hidden="true" />
+                    {selected.is_favorite ? "Approved" : "Pending"}
+                  </span>
+                )}
+              </div>
+
               <h3>{selected.title}</h3>
               {selected.artist_name && (
                 <p className="lightbox-artist">Created by {selected.artist_name}</p>
@@ -709,14 +661,56 @@ export default function Gallery({ session, refreshKey, onChanged, onGoUpload, on
                 </div>
               )}
 
-              <a
-                href={`mailto:riroartdsg@gmail.com?subject=${encodeURIComponent(
-                  `Inquiry: ${selected.title}`
-                )}`}
-                className="btn-primary lightbox-cta"
-              >
-                Inquire About This Piece
-              </a>
+              {isAdmin && (
+                <div className="lightbox-admin-bar">
+                  {confirmDeleteId === selected.id ? (
+                    <>
+                      <span className="card-delete-prompt">Delete permanently?</span>
+                      <div className="card-admin-btn-group">
+                        <button
+                          type="button"
+                          className="card-action-btn card-action-cancel"
+                          disabled={busyId === selected.id}
+                          onClick={() => setConfirmDeleteId(null)}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          className="card-action-btn card-action-confirm-delete"
+                          disabled={busyId === selected.id}
+                          onClick={(e) => handleDeleteItem(e, selected)}
+                        >
+                          {busyId === selected.id ? "Deleting..." : "Confirm"}
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        className={`card-action-btn ${
+                          selected.is_favorite
+                            ? "card-action-revoke"
+                            : "card-action-approve"
+                        }`}
+                        disabled={busyId === selected.id}
+                        onClick={(e) => handleToggleApproval(e, selected)}
+                      >
+                        {selected.is_favorite ? "Revoke Approval" : "Approve Request"}
+                      </button>
+                      <button
+                        type="button"
+                        className="card-action-btn card-action-delete"
+                        disabled={busyId === selected.id}
+                        onClick={() => setConfirmDeleteId(selected.id)}
+                      >
+                        Delete
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>

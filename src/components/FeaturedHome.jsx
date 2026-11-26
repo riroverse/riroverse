@@ -160,15 +160,6 @@ export default function FeaturedHome({ session, refreshKey, onOpenWorks, onOpenA
                   <strong>{selected.price}</strong>
                 </div>
               )}
-
-              <a
-                href={`mailto:riroartdsg@gmail.com?subject=${encodeURIComponent(
-                  `Inquiry: ${selected.title}`
-                )}`}
-                className="btn-primary lightbox-cta"
-              >
-                Inquire About This Piece
-              </a>
             </div>
           </div>
         </div>

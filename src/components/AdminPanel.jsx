@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useState } from "react";
 import { isAdminUser, supabase } from "../lib/supabase";
-import AuthSection from "./AuthSection";
 
 function normalizeHandle(raw, platform) {
   let val = raw.trim();
@@ -25,33 +24,18 @@ export default function AdminPanel({ session, onChanged, onBack }) {
   const [twitterInput, setTwitterInput] = useState("");
   const [tiktokInput, setTiktokInput] = useState("");
   const [artDate, setArtDate] = useState(todayInput);
-  const [price, setPrice] = useState("");
   const [description, setDescription] = useState("");
   const [isFavorite, setIsFavorite] = useState(false);
-  const [file, setFile] = useState(null);
-
-  const previewUrl = useMemo(() => (file ? URL.createObjectURL(file) : ""), [file]);
 
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
-  const fileInputRef = useRef(null);
 
   const isAdmin = isAdminUser(session);
 
-  useEffect(() => {
-    return () => {
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
-    };
-  }, [previewUrl]);
-
-  async function handleUpload(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
-    if (!file) {
-      setStatus("Please choose an image or video file first.");
-      return;
-    }
-    if (file.size > 50 * 1024 * 1024) {
-      setStatus("Maximum file size is 50 MB on the Supabase free tier.");
+    if (!supabase) {
+      setStatus("Supabase is not configured yet.");
       return;
     }
 
@@ -68,36 +52,23 @@ export default function AdminPanel({ session, onChanged, onBack }) {
     }
 
     setLoading(true);
-    setStatus("Uploading to archive...");
+    setStatus("Submitting request...");
 
     try {
-      const mediaType = file.type.startsWith("video/") ? "video" : "image";
-      const cleanName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const filePath = `${Date.now()}-${cleanName}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from("artworks-media")
-        .upload(filePath, file);
-      if (uploadError) throw uploadError;
-
-      const { data: urlData } = supabase.storage
-        .from("artworks-media")
-        .getPublicUrl(filePath);
-
       const chosenIso = artDate
         ? `${artDate}T12:00:00.000Z`
         : new Date().toISOString();
 
       const payload = {
-        title,
+        title: title.trim(),
         artist_name: artistName.trim(),
         twitter_handle: formattedX,
         tiktok_handle: formattedTikTok,
         category: "Archive",
-        price: price || null,
-        description: description || null,
-        media_url: urlData.publicUrl,
-        media_type: mediaType,
+        price: null,
+        description: description.trim() || null,
+        media_url: "",
+        media_type: "image",
         created_at: chosenIso,
         ...(isAdmin ? { is_favorite: isFavorite } : {}),
       };
@@ -109,15 +80,12 @@ export default function AdminPanel({ session, onChanged, onBack }) {
       setTwitterInput("");
       setTiktokInput("");
       setArtDate(todayInput());
-      setPrice("");
       setDescription("");
       setIsFavorite(false);
-      setFile(null);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      setStatus("Published to your Works archive.");
+      setStatus("Request submitted successfully.");
       onChanged?.();
     } catch (err) {
-      setStatus("Upload failed: " + err.message);
+      setStatus("Submit failed: " + err.message);
     } finally {
       setLoading(false);
     }
@@ -133,7 +101,7 @@ export default function AdminPanel({ session, onChanged, onBack }) {
           <p className="eyebrow">Studio Desk</p>
           <h1>Submit a Request</h1>
           <p className="gallery-subtitle">
-            Upload your work and we'll review it. You can track the approval status below.
+            Share your request details below and we&apos;ll review it.
           </p>
         </div>
         <button type="button" className="btn-outline" onClick={onBack}>
@@ -142,116 +110,97 @@ export default function AdminPanel({ session, onChanged, onBack }) {
       </div>
 
       <div className="upload-workspace">
-        <div className="admin-box">
+        <div className="admin-box request-box-single">
           <div className="admin-top">
             <div>
               <h3>New Request</h3>
-              <p className="admin-note">{session ? `Signed in as ${session.user.email}` : "Sign in to submit a request"}</p>
+              <p className="admin-note">
+                {session
+                  ? `Signed in as ${session.user.email}`
+                  : "Fill in the form below to submit a request"}
+              </p>
             </div>
           </div>
 
-          <div className="upload-split">
-            <form className="admin-fields" onSubmit={handleUpload}>
+          <form className="admin-fields request-form-single" onSubmit={handleSubmit}>
+            <div className="field-row field-row-3">
               <label className="field">
-                <span>Photo or Video</span>
+                <span>Artwork Title</span>
                 <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*,video/*"
-                  onChange={(e) => setFile(e.target.files?.[0] || null)}
+                  type="text"
+                  placeholder="e.g. Dusk in the Studio"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
                   required
                 />
               </label>
 
-              <div className="field-row">
-                <label className="field">
-                  <span>Artwork Title</span>
-                  <input
-                    type="text"
-                    placeholder="e.g. Dusk in the Studio"
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    required
-                  />
-                </label>
-
-                <label className="field">
-                  <span>Creator / Your Name</span>
-                  <input
-                    type="text"
-                    placeholder="e.g. Riro"
-                    value={artistName}
-                    onChange={(e) => setArtistName(e.target.value)}
-                    required
-                  />
-                </label>
-              </div>
-
-              <div className="field-row">
-                <label className="field">
-                  <span>X (Twitter) Account</span>
-                  <input
-                    type="text"
-                    placeholder="@username"
-                    value={twitterInput}
-                    onChange={(e) => setTwitterInput(e.target.value)}
-                    onBlur={() => xPreview && setTwitterInput(xPreview)}
-                    required
-                  />
-                  <small className="field-hint">
-                    Format: {xPreview || "@username"} (auto-links to X app)
-                  </small>
-                </label>
-
-                <label className="field">
-                  <span>TikTok Account</span>
-                  <input
-                    type="text"
-                    placeholder="@username"
-                    value={tiktokInput}
-                    onChange={(e) => setTiktokInput(e.target.value)}
-                    onBlur={() => tiktokPreview && setTiktokInput(tiktokPreview)}
-                    required
-                  />
-                  <small className="field-hint">
-                    Format: {tiktokPreview || "@username"} (auto-links to TikTok app)
-                  </small>
-                </label>
-              </div>
-
-              <div className="field-row">
-                <label className="field">
-                  <span>Date (Day / Month / Year)</span>
-                  <input
-                    type="date"
-                    value={artDate}
-                    onChange={(e) => setArtDate(e.target.value)}
-                    required
-                  />
-                </label>
-
-                <label className="field">
-                  <span>Price (Optional)</span>
-                  <input
-                    type="text"
-                    placeholder="e.g. $45"
-                    value={price}
-                    onChange={(e) => setPrice(e.target.value)}
-                  />
-                </label>
-              </div>
-
               <label className="field">
-                <span>Notes / Medium (Optional)</span>
-                <textarea
-                  rows="3"
-                  placeholder="Dimensions, medium, or story behind the piece..."
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
+                <span>Creator / Your Name</span>
+                <input
+                  type="text"
+                  placeholder="e.g. Riro"
+                  value={artistName}
+                  onChange={(e) => setArtistName(e.target.value)}
+                  required
                 />
               </label>
 
-              {isAdmin && (
+              <label className="field">
+                <span>Date</span>
+                <input
+                  type="date"
+                  value={artDate}
+                  onChange={(e) => setArtDate(e.target.value)}
+                  required
+                />
+              </label>
+            </div>
+
+            <div className="field-row">
+              <label className="field">
+                <span>X (Twitter) Account</span>
+                <input
+                  type="text"
+                  placeholder="@username"
+                  value={twitterInput}
+                  onChange={(e) => setTwitterInput(e.target.value)}
+                  onBlur={() => xPreview && setTwitterInput(xPreview)}
+                  required
+                />
+                <small className="field-hint">
+                  Format: {xPreview || "@username"} (auto-links to X app)
+                </small>
+              </label>
+
+              <label className="field">
+                <span>TikTok Account</span>
+                <input
+                  type="text"
+                  placeholder="@username"
+                  value={tiktokInput}
+                  onChange={(e) => setTiktokInput(e.target.value)}
+                  onBlur={() => tiktokPreview && setTiktokInput(tiktokPreview)}
+                  required
+                />
+                <small className="field-hint">
+                  Format: {tiktokPreview || "@username"} (auto-links to TikTok app)
+                </small>
+              </label>
+            </div>
+
+            <label className="field">
+              <span>Description / Notes</span>
+              <textarea
+                rows="3"
+                placeholder="Tell us about the idea, style, medium, or details behind your request..."
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
+            </label>
+
+            <div className="request-submit-row">
+              {isAdmin ? (
                 <label className="fav-checkbox">
                   <input
                     type="checkbox"
@@ -260,29 +209,17 @@ export default function AdminPanel({ session, onChanged, onBack }) {
                   />
                   <span>Mark as Approved on submit</span>
                 </label>
+              ) : (
+                <span />
               )}
 
               <button type="submit" className="btn-primary" disabled={loading}>
                 {loading ? "Submitting..." : "Submit Request"}
               </button>
-              {status && <p className="admin-status">{status}</p>}
-            </form>
-
-            <div className="upload-preview-box">
-              <span className="preview-label">Preview</span>
-              <div className="upload-preview-frame">
-                {previewUrl ? (
-                  file?.type.startsWith("video/") ? (
-                    <video src={previewUrl} controls muted playsInline />
-                  ) : (
-                    <img src={previewUrl} alt="Selected artwork preview" />
-                  )
-                ) : (
-                  <p>Choose an image or video to preview.</p>
-                )}
-              </div>
             </div>
-          </div>
+
+            {status && <p className="admin-status">{status}</p>}
+          </form>
         </div>
       </div>
     </section>
