@@ -2383,17 +2383,6 @@ video {
   color: #f4c68c;
 }
 
-.admin-demo-pill {
-  margin-left: 6px;
-  border-style: dashed;
-}
-
-.admin-demo-pill.is-on {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: rgba(158, 90, 56, 0.08);
-}
-
 .admin-toast {
   flex-shrink: 0;
   display: flex;

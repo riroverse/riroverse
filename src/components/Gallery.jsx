@@ -1,119 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { isAdminUser, isSupabaseConfigured, supabase } from "../lib/supabase";
 
-const DEMO_REQUESTS = [
-  {
-    title: "Dusk in the Studio",
-    desc: "Warm terracotta illustration inspired by late afternoon sunlight across a minimalist desk.",
-  },
-  {
-    title: "Terracotta Stillness",
-    desc: "Editorial character portrait with muted clay palette, soft grain texture, and calm expression.",
-  },
-  {
-    title: "Morning Espresso",
-    desc: "Cozy coffee corner scene in earthy brown and cream tones for a brand header visual.",
-  },
-  {
-    title: "Warm Brushstrokes",
-    desc: "Abstract painterly landscape blending ochre, raw umber, and linen white for print series.",
-  },
-  {
-    title: "Clay & Shadow",
-    desc: "Minimal architectural study focusing on geometric arches and long afternoon shadows.",
-  },
-  {
-    title: "Autumn Horizon",
-    desc: "Atmospheric landscape artwork with burnt sienna hills and quiet misty sky.",
-  },
-  {
-    title: "Ochre Courtyard",
-    desc: "Sun-washed Mediterranean courtyard concept art with ceramic pots and warm plaster walls.",
-  },
-  {
-    title: "Quiet Monolith",
-    desc: "Sculptural editorial cover concept using deep espresso silhouette against warm sand backdrop.",
-  },
-  {
-    title: "Sienna Study IV",
-    desc: "Botanical line work paired with soft watercolor wash in earth tones for stationery set.",
-  },
-  {
-    title: "Timber & Light",
-    desc: "Interior study of cedar beams and morning window light, calm and grounded composition.",
-  },
-  {
-    title: "Sandstone Veil",
-    desc: "Portrait illustration with flowing linen fabric and subtle sunlit rim lighting.",
-  },
-  {
-    title: "Amber Solitude",
-    desc: "Single figure overlooking a golden dusk valley, painted with tactile dry-brush texture.",
-  },
-  {
-    title: "Raw Umber Form",
-    desc: "Modernist color-block composition suitable for album cover and social campaign.",
-  },
-  {
-    title: "Evening Linen",
-    desc: "Still life of handmade ceramics, dried branches, and warm candlelight on linen table.",
-  },
-  {
-    title: "Desert Archway",
-    desc: "Minimalist poster illustration featuring terracotta doorway opening to twilight sky.",
-  },
-  {
-    title: "Soft Kiln Glow",
-    desc: "Artisan studio moment capturing freshly glazed pottery in warm ambient light.",
-  },
-  {
-    title: "Cedar & Silence",
-    desc: "Quiet forest clearing rendered in muted olive, bark brown, and soft parchment highlights.",
-  },
-  {
-    title: "Burnt Earth No. 9",
-    desc: "Textured abstract canvas piece exploring balance between organic shapes and negative space.",
-  },
-  {
-    title: "Late Sun Frame",
-    desc: "Window-framed cityscape at golden hour with soft nostalgic earth-tone grading.",
-  },
-  {
-    title: "Earthen Echo",
-    desc: "Editorial spot illustration series combining organic stones, hands, and warm typography.",
-  },
-];
-
-const DEMO_ARTISTS = [
-  { name: "Riro", x: "@riroartdsg", tiktok: "@riroartdsg" },
-  { name: "Nadia K.", x: "@nadiastudio", tiktok: "@nadia.draws" },
-  { name: "Sora Tanaka", x: "@sora_visual", tiktok: "@soratanaka" },
-  { name: "Alya Putri", x: "@alyaputriart", tiktok: "@alya.sketch" },
-  { name: "Kael M.", x: "@kaelforms", tiktok: "@kael.studio" },
-];
-
-function buildDemoTextRequests() {
-  return DEMO_REQUESTS.map((entry, i) => {
-    const artist = DEMO_ARTISTS[i % DEMO_ARTISTS.length];
-    const day = String(Math.max(1, 26 - i)).padStart(2, "0");
-    return {
-      id: `demo-text-${i + 1}`,
-      title: entry.title,
-      artist_name: artist.name,
-      twitter_handle: artist.x,
-      tiktok_handle: artist.tiktok,
-      price: null,
-      description: entry.desc,
-      media_type: "image",
-      media_url: "",
-      src: "",
-      created_at: `2026-11-${day}T12:00:00.000Z`,
-      is_favorite: i >= 14,
-      isDemo: true,
-    };
-  });
-}
-
 const formatFullDate = (iso) =>
   new Intl.DateTimeFormat("en-US", {
     day: "numeric",
@@ -140,8 +27,6 @@ export default function Gallery({ session, refreshKey, onChanged }) {
   const [dbItems, setDbItems] = useState([]);
   const [loaded, setLoaded] = useState(!isSupabaseConfigured);
   const [adminFilter, setAdminFilter] = useState("all"); // "all" | "pending" | "approved"
-  const [showDemoPreview, setShowDemoPreview] = useState(true);
-  const [demoItems, setDemoItems] = useState(() => buildDemoTextRequests());
   const [busyId, setBusyId] = useState(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [actionError, setActionError] = useState("");
@@ -195,57 +80,35 @@ export default function Gallery({ session, refreshKey, onChanged }) {
     return () => window.removeEventListener("keydown", handleKey);
   }, [selected]);
 
-  const allItems = useMemo(() => {
-    if (!showDemoPreview) return dbItems;
-    if (isAdmin) return [...demoItems, ...dbItems];
-    return [...demoItems.filter((item) => item.is_favorite), ...dbItems];
-  }, [isAdmin, showDemoPreview, demoItems, dbItems]);
-
   const counts = useMemo(() => {
     let pending = 0;
     let approved = 0;
-    for (const item of allItems) {
+    for (const item of dbItems) {
       if (item.is_favorite) approved += 1;
       else pending += 1;
     }
-    return { all: allItems.length, pending, approved };
-  }, [allItems]);
+    return { all: dbItems.length, pending, approved };
+  }, [dbItems]);
 
   const visibleItems = useMemo(() => {
-    if (!isAdmin) return allItems;
+    if (!isAdmin) return dbItems;
     if (adminFilter === "pending") {
-      return allItems.filter((item) => !item.is_favorite);
+      return dbItems.filter((item) => !item.is_favorite);
     }
     if (adminFilter === "approved") {
-      return allItems.filter((item) => Boolean(item.is_favorite));
+      return dbItems.filter((item) => Boolean(item.is_favorite));
     }
-    return allItems;
-  }, [allItems, isAdmin, adminFilter]);
+    return dbItems;
+  }, [dbItems, isAdmin, adminFilter]);
 
   async function handleToggleApproval(e, item) {
     e?.stopPropagation();
-    if (!isAdmin || busyId === item.id) return;
+    if (!isAdmin || !supabase || busyId === item.id) return;
 
     const nextApproved = !item.is_favorite;
-    setConfirmDeleteId(null);
-
-    if (item.isDemo) {
-      setDemoItems((prev) =>
-        prev.map((row) =>
-          row.id === item.id ? { ...row, is_favorite: nextApproved } : row
-        )
-      );
-      setSelected((prev) =>
-        prev && prev.id === item.id
-          ? { ...prev, is_favorite: nextApproved }
-          : prev
-      );
-      return;
-    }
-
-    if (!supabase) return;
     setBusyId(item.id);
     setActionError("");
+    setConfirmDeleteId(null);
 
     // Optimistic update
     setDbItems((prev) =>
@@ -284,16 +147,8 @@ export default function Gallery({ session, refreshKey, onChanged }) {
 
   async function handleDeleteItem(e, item) {
     e?.stopPropagation();
-    if (!isAdmin || busyId === item.id) return;
+    if (!isAdmin || !supabase || busyId === item.id) return;
 
-    if (item.isDemo) {
-      setDemoItems((prev) => prev.filter((row) => row.id !== item.id));
-      setSelected((prev) => (prev && prev.id === item.id ? null : prev));
-      setConfirmDeleteId(null);
-      return;
-    }
-
-    if (!supabase) return;
     setBusyId(item.id);
     setActionError("");
 
@@ -355,19 +210,6 @@ export default function Gallery({ session, refreshKey, onChanged }) {
             onClick={() => setAdminFilter("approved")}
           >
             Approved <span className="pill-count">{counts.approved}</span>
-          </button>
-          <button
-            type="button"
-            className={`admin-filter-pill admin-demo-pill ${showDemoPreview ? "is-on" : ""}`}
-            onClick={() => {
-              if (!showDemoPreview && demoItems.length === 0) {
-                setDemoItems(buildDemoTextRequests());
-              }
-              setShowDemoPreview((v) => !v);
-            }}
-            title="Toggle local 20-item text preview (not saved to database)"
-          >
-            {showDemoPreview ? "Hide 20 Preview" : "Preview 20"}
           </button>
         </div>
       )}
